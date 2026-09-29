@@ -1,2 +1,3 @@
 .pio/
 prompts.txt
+__pycache__/
