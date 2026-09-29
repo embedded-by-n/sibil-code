@@ -11,7 +11,9 @@
 //   LED ON <colour> / LED OFF    command accepted
 //   ACK <colour> <ms>            the matching button was pressed; ms since it lit
 //   WRONG <colour> <ms>          another button was pressed; the LED stays lit
-//   PRESS <colour> <millis>      every press, as in button-logger
+//   PRESS <colour> <millis>      every counted press, as in button-logger
+//
+// A press counts once per 5 s per button; repeats within that span are ignored.
 //
 // Buttons connect their pins to 3V3, so a pressed button reads HIGH. Each
 // prompt LED runs from its own pin through a resistor to GND, separate from
@@ -24,6 +26,8 @@ struct Button {
   bool stable;          // debounced level: true = pressed (HIGH)
   bool lastRead;        // most recent raw reading
   uint32_t changedAt;   // when the raw reading last changed
+  uint32_t pressedAt;   // when the last counted press happened
+  bool counted;         // whether any press has been counted yet
 };
 
 static Button buttons[] = {
@@ -33,6 +37,9 @@ static Button buttons[] = {
 };
 
 static const uint32_t DEBOUNCE_MS = 20;
+// Each counted press covers this span: further presses of the same button
+// within it are ignored, so one experience is logged once.
+static const uint32_t LOCKOUT_MS = 5000;
 
 static Button *prompted = nullptr;  // colour currently lit, if any
 static uint32_t litAt = 0;
@@ -105,7 +112,9 @@ void loop() {
       b.changedAt = now;
     } else if (level != b.stable && now - b.changedAt >= DEBOUNCE_MS) {
       b.stable = level;
-      if (level) {
+      if (level && (!b.counted || now - b.pressedAt >= LOCKOUT_MS)) {
+        b.counted = true;
+        b.pressedAt = now;
         Serial.printf("PRESS %s %lu\n", b.name, (unsigned long)now);
         if (prompted == &b) {
           ledsOff();
